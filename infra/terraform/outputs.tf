@@ -32,3 +32,8 @@ output "dlq_url" {
   description = "URL of the SQS dead-letter queue for failed ingestion batches."
   value       = aws_sqs_queue.ingestion_dlq.url
 }
+
+output "crawler_name" {
+  description = "Name of the Glue Crawler that indexes the raw zone."
+  value       = aws_glue_crawler.raw.name
+}

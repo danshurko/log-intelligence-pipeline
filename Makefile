@@ -20,6 +20,12 @@ demo-down-streaming:
 		-target=aws_kinesis_stream.device_logs \
 		-auto-approve
 
+crawler:
+	aws glue start-crawler --name $$(cd infra/terraform && terraform output -raw crawler_name)
+
+crawler-status:
+	aws glue get-crawler --name $$(cd infra/terraform && terraform output -raw crawler_name) --query 'Crawler.State'
+
 # pipeline targets
 
 backfill:
