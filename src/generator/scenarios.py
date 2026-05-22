@@ -36,7 +36,7 @@ ERROR_MESSAGES: tuple[str, ...] = (
 ErrorRateFn = Callable[[Device], float]
 
 
-def _make_event(
+def make_event(
     device: Device,
     ts: datetime,
     is_error: bool,
@@ -82,7 +82,7 @@ def _emit_for_device(
     n_events = max(0, int(rate * duration_s))
     for _ in range(n_events):
         ts = start + timedelta(seconds=rng.uniform(0.0, duration_s))
-        out.append(_make_event(device, ts, rng.random() < error_rate, rng))
+        out.append(make_event(device, ts, rng.random() < error_rate, rng))
 
 
 def _baseline(
@@ -128,7 +128,7 @@ def error_burst(
     n_burst = max(1, int(burst_rate * burst_window_s))
     for _ in range(n_burst):
         ts = burst_start + timedelta(seconds=rng.uniform(0.0, burst_window_s))
-        out.append(_make_event(target, ts, is_error=True, rng=rng))
+        out.append(make_event(target, ts, is_error=True, rng=rng))
     return out
 
 
@@ -151,7 +151,7 @@ def silent_device(
             ts = start + timedelta(seconds=rng.uniform(0.0, duration_s))
             if device.device_id == target.device_id and ts >= silent_after:
                 continue
-            out.append(_make_event(device, ts, rng.random() < BASE_ERROR_RATE, rng))
+            out.append(make_event(device, ts, rng.random() < BASE_ERROR_RATE, rng))
     return out
 
 

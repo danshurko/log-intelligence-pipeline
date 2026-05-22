@@ -1,7 +1,11 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  data_zones = ["raw", "staging", "curated"]
+  # `raw`/`staging`/`curated` are the data zones; `artifacts` holds build
+  # outputs (Lambda layer zips, Glue scripts) that the AWS service plane
+  # fetches at deploy time. Grouped here so config (versioning, encryption,
+  # public-access block) stays consistent across all four buckets.
+  data_zones = ["raw", "staging", "curated", "artifacts"]
 }
 
 resource "aws_s3_bucket" "data" {
