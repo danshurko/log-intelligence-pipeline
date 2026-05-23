@@ -126,7 +126,7 @@ def backfill(
             buf = io.BytesIO()
             pq.write_table(table, buf, compression="snappy")
             key = (
-                f"dt={hour_cursor.strftime('%Y-%m-%d')}/"
+                f"events/dt={hour_cursor.strftime('%Y-%m-%d')}/"
                 f"hour={hour_cursor.strftime('%H')}/"
                 f"batch-{uuid.uuid4()}.parquet"
             )

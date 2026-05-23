@@ -1,6 +1,5 @@
 -- Fact table for all events. Joins the cleaned staging snapshot to the
 -- current view of `dim_devices` to resolve the surrogate key.
-CREATE OR REPLACE TABLE curated.fct_events AS
 SELECT
   e.event_id,
   d.device_sk,
@@ -8,7 +7,7 @@ SELECT
   e.event_type,
   e.severity,
   e.metrics_json
-FROM staging.events_clean e
-JOIN curated.dim_devices d
+FROM {staging_db}.events_clean e
+JOIN {curated_db}.dim_devices d
   ON d.device_id = e.device_id
- AND d.is_current = true;
+ AND d.is_current = true

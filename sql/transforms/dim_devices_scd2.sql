@@ -1,12 +1,12 @@
--- SCD Type 2 merge for the device dimension. Writes the next-state of the
--- table to `curated.dim_devices_new`; the orchestration layer is then
--- responsible for the atomic drop-and-rename. SparkSQL cannot overwrite a
--- table that the same query reads from, so the swap stays out of band.
+-- SCD Type 2 merge for the device dimension. Returns the full next-state of
+-- the table — historical rows preserved, changed currents closed, brand-new
+-- versions opened. The orchestrator is responsible for cache+materialize
+-- before overwriting the underlying path (the SELECT reads from the same
+-- table it's about to replace).
 --
 -- Attribute comparisons use `IS NOT DISTINCT FROM` so that a NULL facility
 -- is treated as a real value (matches NULL, differs from any non-NULL),
 -- rather than swallowed by SQL's three-valued logic.
-CREATE OR REPLACE TABLE curated.dim_devices_new AS
 WITH
   -- Latest observed state per device in this batch.
   current_per_device AS (
@@ -17,20 +17,20 @@ WITH
         firmware_version,
         facility_id,
         ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY event_ts DESC) AS rn
-      FROM staging.events_clean
+      FROM {staging_db}.events_clean
     ) t
     WHERE rn = 1
   ),
 
   existing_current AS (
     SELECT *
-    FROM curated.dim_devices
+    FROM {curated_db}.dim_devices
     WHERE is_current = true
   ),
 
   historical AS (
     SELECT *
-    FROM curated.dim_devices
+    FROM {curated_db}.dim_devices
     WHERE is_current = false
   ),
 
@@ -80,7 +80,7 @@ WITH
   -- never reuses keys for distinct device versions.
   new_versions AS (
     SELECT
-      (SELECT COALESCE(MAX(device_sk), 0) FROM curated.dim_devices)
+      (SELECT COALESCE(MAX(device_sk), 0) FROM {curated_db}.dim_devices)
         + ROW_NUMBER() OVER (ORDER BY device_id) AS device_sk,
       device_id,
       firmware_version,
@@ -94,4 +94,4 @@ WITH
 SELECT * FROM historical
 UNION ALL SELECT * FROM unchanged
 UNION ALL SELECT * FROM changed_closed
-UNION ALL SELECT * FROM new_versions;
+UNION ALL SELECT * FROM new_versions

@@ -26,6 +26,12 @@ crawler:
 crawler-status:
 	aws glue get-crawler --name $$(cd infra/terraform && terraform output -raw crawler_name) --query 'Crawler.State'
 
+trigger-etl:
+	aws stepfunctions start-execution --state-machine-arn $$(cd infra/terraform && terraform output -raw state_machine_arn)
+
+etl-status:
+	aws stepfunctions list-executions --state-machine-arn $$(cd infra/terraform && terraform output -raw state_machine_arn) --max-items 5
+
 # pipeline targets
 
 backfill:

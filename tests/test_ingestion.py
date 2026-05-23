@@ -70,8 +70,8 @@ def test_process_records_writes_grouped_parquet_to_s3():
     assert result == {"processed": 3, "rejected": 0, "groups": 2}
     assert len(s3.puts) == 2
     keys = sorted(p["Key"] for p in s3.puts)
-    assert keys[0].startswith("dt=2026-05-19/hour=10/")
-    assert keys[1].startswith("dt=2026-05-19/hour=11/")
+    assert keys[0].startswith("events/dt=2026-05-19/hour=10/")
+    assert keys[1].startswith("events/dt=2026-05-19/hour=11/")
 
     # Parquet content for hour=10 should hold both events.
     h10 = next(p for p in s3.puts if "hour=10" in p["Key"])

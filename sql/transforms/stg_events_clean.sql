@@ -1,7 +1,6 @@
 -- Layer 2 cleanup: dedupe by event_id, drop rows missing required columns,
--- drop wildly-future timestamps (>1h ahead of current_timestamp). Idempotent
--- over raw.events; safe to re-run.
-CREATE OR REPLACE TABLE staging.events_clean AS
+-- drop wildly-future timestamps (>1h ahead of current_timestamp). Result is
+-- a pure SELECT; the orchestrator owns where the rows land.
 WITH ranked AS (
   SELECT
     event_id,
@@ -16,7 +15,7 @@ WITH ranked AS (
     message,
     metrics_json,
     ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY timestamp) AS rn
-  FROM raw.events
+  FROM {raw_db}.events
   WHERE event_id IS NOT NULL
     AND device_id IS NOT NULL
     AND timestamp IS NOT NULL
@@ -40,4 +39,4 @@ SELECT
   message,
   metrics_json
 FROM ranked
-WHERE rn = 1;
+WHERE rn = 1

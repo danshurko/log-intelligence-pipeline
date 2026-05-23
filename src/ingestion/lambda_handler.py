@@ -140,7 +140,7 @@ def process_records(
     written = 0
     for (dt, hour), rows in groups.items():
         body = _rows_to_parquet_bytes(rows)
-        key = f"dt={dt}/hour={hour}/batch-{uuid.uuid4()}.parquet"
+        key = f"events/dt={dt}/hour={hour}/batch-{uuid.uuid4()}.parquet"
         s3_client.put_object(Bucket=bucket, Key=key, Body=body)
         written += len(rows)
         log(

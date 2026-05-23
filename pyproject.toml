@@ -27,6 +27,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
 
+# The Glue PySpark job runs on Glue 4.0's Python 3.10 runtime, where
+# `datetime.UTC` (3.11+) doesn't exist. Suppress the UP017 push toward it
+# in that file only; the rest of the repo targets 3.12.
+[tool.ruff.lint.per-file-ignores]
+"src/transformation/glue_pyspark_job.py" = ["UP017"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

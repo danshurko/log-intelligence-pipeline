@@ -37,3 +37,13 @@ output "crawler_name" {
   description = "Name of the Glue Crawler that indexes the raw zone."
   value       = aws_glue_crawler.raw.name
 }
+
+output "state_machine_arn" {
+  description = "ARN of the ETL Step Functions state machine."
+  value       = aws_sfn_state_machine.etl.arn
+}
+
+output "pipeline_alerts_topic_arn" {
+  description = "SNS topic that receives ETL failure notifications."
+  value       = aws_sns_topic.pipeline_alerts.arn
+}
