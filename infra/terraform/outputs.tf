@@ -33,6 +33,16 @@ output "dlq_url" {
   value       = aws_sqs_queue.ingestion_dlq.url
 }
 
+output "dlq_name" {
+  description = "Name of the SQS dead-letter queue (for CloudWatch metric lookups)."
+  value       = aws_sqs_queue.ingestion_dlq.name
+}
+
+output "aws_region" {
+  description = "Region the stack is deployed into."
+  value       = var.region
+}
+
 output "crawler_name" {
   description = "Name of the Glue Crawler that indexes the raw zone."
   value       = aws_glue_crawler.raw.name

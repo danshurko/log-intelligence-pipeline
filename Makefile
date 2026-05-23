@@ -45,3 +45,12 @@ stream:
 		--stream-name $$(cd infra/terraform && terraform output -raw stream_name)
 
 # dev targets
+
+dashboard:
+	@AWS_REGION=$$(cd infra/terraform && terraform output -raw aws_region) \
+	 ATHENA_OUTPUT_S3="s3://$$(cd infra/terraform && terraform output -raw artifacts_bucket_name)/athena-results/" \
+	 ATHENA_WORKGROUP=primary \
+	 CURATED_DATABASE=device_log_curated \
+	 DLQ_NAME=$$(cd infra/terraform && terraform output -raw dlq_name) \
+	 STATE_MACHINE_ARN=$$(cd infra/terraform && terraform output -raw state_machine_arn) \
+	 uv run streamlit run src/dashboard/app.py
