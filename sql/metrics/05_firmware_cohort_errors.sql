@@ -1,7 +1,3 @@
--- Error rate per firmware version over the last 7 days. Each fct_events
--- row carries the device_sk that was current at event time, so the join
--- to dim_devices on device_sk (without filtering is_current) attributes
--- the event to whichever firmware the device was running back then.
 WITH window_events AS (
   SELECT device_sk, event_type
   FROM {curated_db}.fct_events

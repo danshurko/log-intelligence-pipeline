@@ -95,9 +95,6 @@ def _rows_to_parquet_bytes(rows: list[dict[str, Any]]) -> bytes:
 
 
 def _emit_metric(cloudwatch: Any, name: str, value: int) -> None:
-    # Emit even when value == 0: a missing datapoint in CloudWatch is
-    # indistinguishable from "pipeline broken", while an explicit zero says
-    # "ran, processed an empty batch".
     try:
         cloudwatch.put_metric_data(
             Namespace=CW_NAMESPACE,
@@ -113,11 +110,7 @@ def process_records(
     s3_client: Any,
     cloudwatch_client: Any,
 ) -> dict[str, int]:
-    """Validate, dedupe, group and write a batch of Kinesis records to S3.
-
-    Returns a small summary dict so callers (and tests) can assert behavior
-    without scraping logs. Raises on S3 write failure so Kinesis can retry.
-    """
+    """Parse records, remove duplicates, group them, and write to S3."""
     rejected = 0
     by_event_id: dict[str, Event] = {}
     for raw in raw_records:
@@ -129,8 +122,6 @@ def process_records(
         if ev is None:
             rejected += 1
             continue
-        # In-batch dedupe: identical event_ids can arrive from generator retries
-        # or from Kinesis at-least-once delivery within the same shard iterator.
         by_event_id[ev.event_id] = ev
 
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -164,7 +155,6 @@ def process_records(
 def handler(event: dict, _context: Any) -> dict[str, int]:
     bucket = os.environ.get(RAW_BUCKET_ENV)
     if not bucket:
-        # Misconfiguration: surface immediately rather than silently dropping.
         raise RuntimeError(f"{RAW_BUCKET_ENV} env var is required")
     s3 = boto3.client("s3")
     cloudwatch = boto3.client("cloudwatch")

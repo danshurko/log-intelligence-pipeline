@@ -1,7 +1,4 @@
--- Mean time between errors per device over the last 7 days. LAG produces
--- the previous error timestamp for the same device; `date_diff('second',...)`
--- yields the gap in seconds. Devices with a single error in the window have
--- no gaps and are excluded.
+-- Calculate mean time between errors per device (last 7 days)
 WITH error_gaps AS (
   SELECT
     device_sk,

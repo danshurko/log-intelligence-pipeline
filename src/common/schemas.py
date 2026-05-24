@@ -1,17 +1,17 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     METRIC = "metric"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"

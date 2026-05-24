@@ -13,16 +13,14 @@ FACILITIES: tuple[str, ...] = (
 
 FIRMWARE_VERSIONS: tuple[str, ...] = ("1.2.0", "1.2.1", "1.3.0", "1.3.1")
 
-# Mean events emitted per device per second, by device type. Sensors are
-# chatty; gateways aggregate and emit less often; controllers sit in between.
+# Mean events per device per second by type
 EVENT_RATES_PER_SECOND: dict[str, float] = {
     "sensor": 1.0,
     "gateway": 0.2,
     "controller": 0.5,
 }
 
-# Fraction of baseline events that are flagged as errors under the `normal`
-# scenario. Scenarios may amplify this for specific devices or cohorts.
+# Baseline fraction of events that are errors
 BASE_ERROR_RATE: float = 0.005
 
 

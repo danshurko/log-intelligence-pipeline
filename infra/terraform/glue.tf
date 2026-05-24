@@ -1,12 +1,9 @@
 locals {
-  # Glue database names can't contain hyphens; substitute the project-name
-  # separator so `device-log` becomes `device_log` in the catalog.
+  # Glue DB names use underscores, not hyphens.
   catalog_prefix = replace(var.project_name, "-", "_")
 }
 
-# One catalog database per zone, mirroring the three S3 zones. The
-# PySpark wrapper writes each transform into the matching zone database,
-# and the crawler populates `${catalog_prefix}_raw` from the raw bucket.
+# One catalog DB per data zone.
 resource "aws_glue_catalog_database" "zones" {
   for_each = toset(["raw", "staging", "curated"])
   name     = "${local.catalog_prefix}_${each.key}"
@@ -59,16 +56,11 @@ resource "aws_glue_crawler" "raw" {
   table_prefix  = ""
 
   s3_target {
-    # Generators write under `events/dt=.../hour=.../*.parquet`. Pointing the
-    # crawler at the `events/` prefix is what gives the discovered table its
-    # predictable name (`events`); the dt/hour folders below become partitions.
+    # Crawl from `events/` so we keep one table (`events`) and dt/hour as partitions.
     path = "s3://${aws_s3_bucket.data["raw"].id}/events/"
   }
 
-  # `TableLevelConfiguration = 2` anchors the table at the `events/` prefix
-  # (depth 2 from the bucket root: <bucket>/events/). Anything deeper —
-  # `dt=…/hour=…/` — is interpreted as Hive partitions on the single table,
-  # not as separate tables. Depth 3 splits one-table-per-dt, which is wrong.
+  # Keep table level at `events/` path depth; deeper folders become partitions.
   configuration = jsonencode({
     Version = 1.0
     CrawlerOutput = {

@@ -11,18 +11,9 @@ data "archive_file" "lambda_code" {
   }
 }
 
-# pyarrow alone is ~70 MB unzipped, and on macOS ARM `uv pip install` falls
-# back to a source build because there's no native wheel. The runtime deps
-# therefore ride in a separate layer built inside a Lambda-identical Linux
-# x86_64 container. Run before the first apply:
-#     make build-lambda-layer
-# That target writes the layer zip at infra/terraform/build/lambda_layer.zip
-# in the python/<package>/... shape the Lambda layer spec requires.
-#
-# The zip is uploaded to the artifacts bucket and Lambda is pointed at the
-# S3 location: the inline PublishLayerVersion API caps at 70 MB but the
-# S3-backed path raises the ceiling to 250 MB, which the pyarrow-bearing
-# layer needs headroom for.
+# Build the deps layer before the first apply:
+#   make build-lambda-layer
+# It creates infra/terraform/build/lambda_layer.zip.
 resource "aws_s3_object" "ingestion_deps_layer" {
   bucket = aws_s3_bucket.data["artifacts"].id
   key    = "lambda-layers/${var.project_name}-ingestion-deps.zip"

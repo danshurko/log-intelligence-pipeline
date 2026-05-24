@@ -2,18 +2,13 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-# Sentinel keys that mark dirty records produced by `inject_dirtiness`. They
-# are not part of the event schema. Callers that write Parquet should filter
-# `_malformed` records out and strip the markers; callers that write JSON to a
-# stream should serialize the `_raw` payload of `_malformed` records verbatim.
+# Extra keys used only for malformed records.
+# They are not part of the normal event schema.
 MALFORMED_MARKER: str = "_malformed"
 MALFORMED_RAW_PAYLOAD: str = "_raw"
 MALFORMED_BYTES: str = "{this is: not_valid_json, "
 
-# Plausible clock drift bounds. Out-of-order looks like a slow clock (backward
-# drift up to 5 min); future looks like a fast clock (forward drift up to 1 h).
-# Downstream SQL cleanup catches these via `timestamp < window_start` and
-# `timestamp > now()` rather than magic sentinel comparisons.
+# Timestamp drift ranges used to simulate bad clocks.
 OUT_OF_ORDER_MIN_SECONDS: int = 1
 OUT_OF_ORDER_MAX_SECONDS: int = 5 * 60
 FUTURE_MIN_SECONDS: int = 1
@@ -42,11 +37,10 @@ def inject_dirtiness(
     config: DirtinessConfig,
     seed: int = 0,
 ) -> list[dict]:
-    """Return a new list of records with probabilistic corruptions applied.
+    """Return new records with random dirtiness.
 
-    Output length may exceed input length when duplicates are injected.
-    Future-shift and out-of-order-shift are mutually exclusive per record so
-    opposing drifts never compound on the same row.
+    The result can be longer because duplicates may be added.
+    A record gets either future shift or backward shift, not both.
     """
     rng = random.Random(seed)
     out: list[dict] = []

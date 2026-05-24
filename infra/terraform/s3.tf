@@ -1,10 +1,6 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  # `raw`/`staging`/`curated` are the data zones; `artifacts` holds build
-  # outputs (Lambda layer zips, Glue scripts) that the AWS service plane
-  # fetches at deploy time. Grouped here so config (versioning, encryption,
-  # public-access block) stays consistent across all four buckets.
   data_zones = ["raw", "staging", "curated", "artifacts"]
 }
 
@@ -13,8 +9,6 @@ resource "aws_s3_bucket" "data" {
 
   bucket = "${var.project_name}-${each.value}-${data.aws_caller_identity.current.account_id}"
 
-  # force_destroy lets `terraform destroy` clear non-empty buckets during dev
-  # iteration. Acceptable here because data is regenerable by the generator CLI.
   force_destroy = true
 }
 

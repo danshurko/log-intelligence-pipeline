@@ -1,5 +1,3 @@
--- Distinct facilities observed in the current staging snapshot. Region is
--- extracted from the facility_id prefix (`fac-XX-NN` -> `XX`).
 WITH distinct_ids AS (
   SELECT DISTINCT facility_id
   FROM {staging_db}.events_clean

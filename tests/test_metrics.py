@@ -21,8 +21,7 @@ TRANSFORM_TARGETS = {
     "fct_errors.sql": f"{CURATED_DB}.fct_errors",
 }
 
-# Mirrors the bootstrap from test_transforms so the first SCD2 run has a
-# typed target to read from.
+# Bootstrap dim_devices schema for first SCD2 run.
 DIM_DEVICES_BOOTSTRAP = f"""
 CREATE TABLE {CURATED_DB}.dim_devices (
   device_sk BIGINT,
@@ -61,10 +60,8 @@ def con():
     c = duckdb.connect()
     for schema in (RAW_DB, STAGING_DB, CURATED_DB):
         c.execute(f"CREATE SCHEMA {schema}")
-    # Shift the fixture so the latest "real" event lands at current_timestamp,
-    # then cast away the UTC tz to mirror what Spark writes to Parquet (naive
-    # UTC). Without that cast, DuckDB's `date_trunc` on TIMESTAMPTZ tries to
-    # import pytz and the anomaly query fails.
+    # Shift event times so the latest event is now and use naive UTC timestamp
+    # to avoid DuckDB timezone issues with date_trunc.
     c.execute(
         f"""
         CREATE TABLE {RAW_DB}.events AS
@@ -120,8 +117,6 @@ def test_top_error_codes_capped_at_10_and_ordered(con):
 
 def test_mtbe_per_device_only_counts_devices_with_multiple_errors(con):
     rows = _run_metric(con, "03_mtbe_per_device.sql")
-    # Devices with a single error in the window have no LAG row and are
-    # excluded; rows that come back must report a positive, real gap count.
     for _device_id, gaps, mtbe_seconds in rows:
         assert gaps >= 1
         assert mtbe_seconds is not None
@@ -129,8 +124,7 @@ def test_mtbe_per_device_only_counts_devices_with_multiple_errors(con):
 
 
 def test_silent_devices_flags_devices_with_no_recent_events(con):
-    # All fixture events land in the last ~60s, so the natural result is
-    # empty. Backdate one device's events by an hour and assert it surfaces.
+    # Backdate one device by 1 hour so it appears as silent.
     target_device, target_sk = con.execute(
         f"SELECT device_id, device_sk FROM {CURATED_DB}.dim_devices "
         "WHERE is_current = true ORDER BY device_id LIMIT 1"
@@ -145,6 +139,7 @@ def test_silent_devices_flags_devices_with_no_recent_events(con):
 
 
 def test_firmware_cohort_errors_versions_subset_of_known(con):
+    # Ensure firmware versions reported are known and rates are valid.
     rows = _run_metric(con, "05_firmware_cohort_errors.sql")
     assert len(rows) > 0
     known = {
@@ -161,15 +156,12 @@ def test_firmware_cohort_errors_versions_subset_of_known(con):
 
 
 def test_anomaly_error_burst_detects_injected_burst(con):
-    # Replace one device's error history with a flat 1-per-hour baseline
-    # plus a 50-error spike, so the burst clearly exceeds mean + 3*stddev.
+    # Create test data: baseline errors + spike to exceed mean + 3*stddev
     target_sk = con.execute(
         f"SELECT device_sk FROM {CURATED_DB}.fct_errors "
         "GROUP BY device_sk ORDER BY COUNT(*) DESC LIMIT 1"
     ).fetchone()[0]
-    con.execute(
-        f"DELETE FROM {CURATED_DB}.fct_errors WHERE device_sk = ?", [target_sk]
-    )
+    con.execute(f"DELETE FROM {CURATED_DB}.fct_errors WHERE device_sk = ?", [target_sk])
     con.execute(
         f"""
         INSERT INTO {CURATED_DB}.fct_errors

@@ -1,14 +1,8 @@
--- SCD Type 2 merge for the device dimension. Returns the full next-state of
--- the table — historical rows preserved, changed currents closed, brand-new
--- versions opened. The orchestrator is responsible for cache+materialize
--- before overwriting the underlying path (the SELECT reads from the same
--- table it's about to replace).
---
--- Attribute comparisons use `IS NOT DISTINCT FROM` so that a NULL facility
--- is treated as a real value (matches NULL, differs from any non-NULL),
--- rather than swallowed by SQL's three-valued logic.
+-- SCD Type 2 merge for device dimension. Produces next-state rows.
+-- Keeps history, closes changed currents, and opens new versions.
+-- Uses IS NOT DISTINCT FROM so NULLs compare as values.
 WITH
-  -- Latest observed state per device in this batch.
+  -- Latest state per device in this batch
   current_per_device AS (
     SELECT device_id, firmware_version, facility_id
     FROM (
@@ -22,19 +16,19 @@ WITH
     WHERE rn = 1
   ),
 
+  -- Current rows in the dimension
   existing_current AS (
     SELECT *
     FROM {curated_db}.dim_devices
     WHERE is_current = true
   ),
 
+  -- Historical (non-current) rows
   historical AS (
-    SELECT *
-    FROM {curated_db}.dim_devices
-    WHERE is_current = false
+    SELECT * FROM {curated_db}.dim_devices WHERE is_current = false
   ),
 
-  -- Devices whose attributes are unchanged: keep the existing current row.
+  -- Devices with unchanged attributes: keep current row
   unchanged AS (
     SELECT e.*
     FROM existing_current e
@@ -44,7 +38,7 @@ WITH
      AND e.facility_id IS NOT DISTINCT FROM c.facility_id
   ),
 
-  -- Devices whose attributes changed: close the existing current row.
+  -- Devices with changed attributes: close current row
   changed_closed AS (
     SELECT
       e.device_sk,
@@ -63,7 +57,7 @@ WITH
     )
   ),
 
-  -- Brand-new devices, plus devices whose attributes changed: open a row.
+  -- New devices or changed devices: open new row
   needs_new_row AS (
     SELECT c.device_id, c.firmware_version, c.facility_id
     FROM current_per_device c
@@ -76,8 +70,7 @@ WITH
        )
   ),
 
-  -- Surrogate keys start above the current max, so re-running this query
-  -- never reuses keys for distinct device versions.
+  -- Generate new surrogate keys above current max
   new_versions AS (
     SELECT
       (SELECT COALESCE(MAX(device_sk), 0) FROM {curated_db}.dim_devices)

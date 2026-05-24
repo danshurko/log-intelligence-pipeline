@@ -1,9 +1,4 @@
-"""Step Functions VerifyCounts step.
-
-Runs two Athena counts (staging vs curated) after the Glue ETL job and
-fails if they diverge by more than `DELTA_THRESHOLD` (default 5%). Step
-Functions catches the exception and routes to the SNS notify state.
-"""
+"""Lambda step to compare staging and curated row counts."""
 
 from __future__ import annotations
 
@@ -27,7 +22,7 @@ CURATED_QUERY_TEMPLATE: str = "SELECT COUNT(*) AS n FROM {curated_db}.fct_events
 
 
 class VerifyFailedError(RuntimeError):
-    """Raised when the staging/curated counts diverge beyond threshold."""
+    """Raised when the count gap is above the threshold."""
 
 
 def _run_count_query(athena: Any, sql: str, output_s3: str, workgroup: str) -> int:
@@ -50,7 +45,7 @@ def _run_count_query(athena: Any, sql: str, output_s3: str, workgroup: str) -> i
         raise TimeoutError(f"athena query {query_id} did not finish in time")
 
     rows = athena.get_query_results(QueryExecutionId=query_id)["ResultSet"]["Rows"]
-    # Athena returns the header in row 0 and the value in row 1.
+    # Row 0 is header, row 1 is value.
     return int(rows[1]["Data"][0]["VarCharValue"])
 
 
@@ -67,9 +62,7 @@ def verify(
     staging = _run_count_query(athena, staging_query, output_s3, workgroup)
     curated = _run_count_query(athena, curated_query, output_s3, workgroup)
 
-    # Treat an empty staging snapshot as "no data to verify"; downstream
-    # alerting catches sustained zero counts via CloudWatch on the Lambda
-    # consumer, not here.
+    # No staging data: skip check.
     if staging == 0:
         log(LOGGER, logging.INFO, "verify_skipped_empty_staging", curated=curated)
         return {"staging": staging, "curated": curated, "delta": 0.0, "ok": True}

@@ -12,6 +12,7 @@ build/
 .venv/
 node_modules/
 .vscode/
+*.tfvars
 
 # Lambda layer build artifacts
 /infra/terraform/build/

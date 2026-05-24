@@ -1,5 +1,3 @@
--- Top 10 error codes by count over the last 7 days. Reads fct_errors
--- directly since it already carries the resolved error_code.
 SELECT
   error_code,
   COUNT(*) AS error_count

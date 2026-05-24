@@ -1,6 +1,3 @@
--- Error rate per device over the last 24 hours. Joins fct_events to
--- dim_devices on the surrogate key so each row carries the device_id that
--- was current at event time, then aggregates over the window.
 WITH window_events AS (
   SELECT device_sk, event_type
   FROM {curated_db}.fct_events

@@ -1,6 +1,4 @@
--- Error sub-fact: subset of `fct_events` where the event is an error,
--- with `error_code` and `message` joined back from staging. Kept separate
--- from `fct_events` so error-only dashboards never scan the full fact.
+-- Extract error events with code and message
 SELECT
   f.event_id,
   f.device_sk,

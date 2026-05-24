@@ -1,6 +1,4 @@
--- Device-hours where the error count is more than 3 standard deviations
--- above the device's own 7-day hourly baseline. Devices with a flat or
--- single-bucket history are excluded since their stddev is 0 or NULL.
+-- Find error spikes: error count > mean + 3 * standard deviation from last 7 days
 WITH hourly_errors AS (
   SELECT
     device_sk,

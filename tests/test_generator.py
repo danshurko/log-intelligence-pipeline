@@ -55,8 +55,6 @@ def test_silent_device_actually_falls_silent():
     for ev in events:
         per_device_counts[ev["device_id"]] = per_device_counts.get(ev["device_id"], 0) + 1
 
-    # The silent device should be the device with the lowest emit count
-    # relative to other devices of the same type.
     min_device = min(per_device_counts, key=lambda d: per_device_counts[d])
     max_device = max(per_device_counts, key=lambda d: per_device_counts[d])
     assert per_device_counts[min_device] < per_device_counts[max_device]
@@ -66,7 +64,6 @@ def _generate_base_events(n: int) -> list[dict]:
     fleet = generate_fleet(30, seed=42)
     start = datetime(2026, 1, 1, tzinfo=UTC)
     rng = random.Random(0)
-    # Pad the window long enough to comfortably exceed `n` events at fleet rates.
     end = start + timedelta(seconds=max(60, n))
     events = normal(fleet, start, end, rng)
     return events[:n]
@@ -98,9 +95,7 @@ def test_dirtiness_rates_within_tolerance():
             out_of_order_count += 1
 
     malformed_count = sum(1 for r in dirty if r.get(MALFORMED_MARKER))
-    missing_count = sum(
-        1 for r in dirty if any(field not in r for field in OPTIONAL_FIELDS)
-    )
+    missing_count = sum(1 for r in dirty if any(field not in r for field in OPTIONAL_FIELDS))
 
     cases = [
         ("duplicate", duplicate_count, config.duplicate_rate),
@@ -111,9 +106,7 @@ def test_dirtiness_rates_within_tolerance():
     ]
     for label, observed, rate in cases:
         expected = rate * n
-        # Wide tolerance for low-rate categories: absolute floor of 10 events
-        # plus 40% relative margin. Duplicates inflate the count of any
-        # mutation they copy, so observed runs slightly hot.
+        # Allow tolerance for low-rate categories: at least 10 events or 40%.
         margin = max(10, expected * 0.4)
         assert abs(observed - expected) <= margin, (
             f"{label}: observed={observed} expected={expected:.1f} margin={margin:.1f}"

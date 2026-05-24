@@ -39,9 +39,7 @@ data "aws_iam_policy_document" "state_machine_inline" {
     resources = [aws_sns_topic.pipeline_alerts.arn]
   }
 
-  # Step Functions' `glue:startJobRun.sync` integration provisions a managed
-  # EventBridge rule under the hood; those calls go through the state
-  # machine role rather than the AWS principal.
+  # Required for `glue:startJobRun.sync` managed EventBridge rule calls.
   statement {
     sid = "ManagedEventsRule"
     actions = [
@@ -73,8 +71,7 @@ resource "aws_sfn_state_machine" "etl" {
         Parameters = {
           Name = aws_glue_crawler.raw.name
         }
-        # A crawler that's already running surfaces as CrawlerRunningException;
-        # treat that as "fine, just wait for it" rather than a failure.
+        # If crawler is already running, just wait and continue.
         Catch = [
           {
             ErrorEquals = ["Glue.CrawlerRunningException"]

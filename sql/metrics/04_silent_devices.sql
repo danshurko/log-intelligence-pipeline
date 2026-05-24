@@ -1,6 +1,4 @@
--- Devices that have produced zero events in the last 30 minutes. Uses an
--- anti-join from the current dim_devices snapshot against the set of
--- device_sks observed in fct_events within the window.
+-- Devices with no events in the last 30 minutes.
 WITH recent_devices AS (
   SELECT DISTINCT device_sk
   FROM {curated_db}.fct_events

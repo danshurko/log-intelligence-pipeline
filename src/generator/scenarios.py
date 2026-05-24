@@ -93,6 +93,7 @@ def _baseline(
     error_rate_fn: ErrorRateFn | None = None,
 ) -> list[dict]:
     if error_rate_fn is None:
+
         def _default_rate(_d: Device) -> float:
             return BASE_ERROR_RATE
 
@@ -104,9 +105,7 @@ def _baseline(
     return out
 
 
-def normal(
-    fleet: list[Device], start: datetime, end: datetime, rng: random.Random
-) -> list[dict]:
+def normal(fleet: list[Device], start: datetime, end: datetime, rng: random.Random) -> list[dict]:
     return _baseline(fleet, start, end, rng)
 
 
@@ -123,7 +122,7 @@ def error_burst(
     burst_start_offset = rng.uniform(0.0, max(0.0, duration_s - burst_window_s))
     burst_start = start + timedelta(seconds=burst_start_offset)
 
-    # Burst: 50× the target's normal emit rate, all errors.
+    # Burst: increase target's emit rate 50x, produce only errors
     burst_rate = EVENT_RATES_PER_SECOND[target.device_type] * 50.0
     n_burst = max(1, int(burst_rate * burst_window_s))
     for _ in range(n_burst):
@@ -139,8 +138,7 @@ def silent_device(
         return []
     duration_s = (end - start).total_seconds()
     target = rng.choice(fleet)
-    # Silence kicks in somewhere in the middle 60% of the window so the
-    # device is observably present at start and observably absent at end.
+    # Silence starts within the middle 60% of the window
     silent_after = start + timedelta(seconds=rng.uniform(duration_s * 0.2, duration_s * 0.8))
 
     out: list[dict] = []
@@ -155,7 +153,7 @@ def silent_device(
     return out
 
 
-# Multiplier applied to BASE_ERROR_RATE for devices on a flagged firmware line.
+# Multiplier for devices with a flagged firmware prefix
 FIRMWARE_ISSUE_MULTIPLIER: float = 5.0
 FIRMWARE_ISSUE_PREFIX: str = "1.3"
 

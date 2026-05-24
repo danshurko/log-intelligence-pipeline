@@ -1,27 +1,4 @@
-"""Glue ETL job: runs the staging+curated transform SQL in order.
-
-Every SQL file in `sql/transforms/` is a pure `SELECT` parameterized with
-`{raw_db}` / `{staging_db}` / `{curated_db}` markers. This wrapper:
-
-- downloads each SQL file from S3 and substitutes the three database names
-  before handing the text to `spark.sql()`;
-- writes the resulting DataFrame to a deterministic S3 path under the
-  staging or curated zone;
-- registers (or refreshes) the matching Hive-style external table in the
-  Glue Data Catalog so Athena and downstream stages can see it.
-
-`dim_devices_scd2.sql` reads from `<curated_db>.dim_devices` and produces
-its next state. The wrapper uses an S3-safe alternating-sibling swap:
-write the merged result to whichever of `dim_devices/` or
-`dim_devices_next/` the table is **not** currently pointing at, then
-re-create the catalog table at the new LOCATION. That sidesteps Spark's
-"cannot overwrite a path you're reading from" rule without relying on
-cache durability, and keeps at most two generations of data on S3.
-
-On any unhandled exception the wrapper writes a `failed` audit row to
-`<curated_db>.pipeline_runs` before re-raising, so a missing audit row
-always means orchestration itself died.
-"""
+"""Glue ETL job: runs staging and curated transform SQL sequentially."""
 
 from __future__ import annotations
 
@@ -49,9 +26,7 @@ from pyspark.sql.types import (
 
 PIPELINE_RUNS_TABLE_NAME: str = "pipeline_runs"
 
-# Order of StructFields here must match the column order used by
-# `_ensure_pipeline_runs_table`'s DDL because `insertInto` matches by
-# position, not by name.
+# Field order must match the pipeline_runs table DDL for insertInto.
 PIPELINE_RUNS_SCHEMA: StructType = StructType(
     [
         StructField("run_id", StringType(), nullable=False),
@@ -65,8 +40,7 @@ PIPELINE_RUNS_SCHEMA: StructType = StructType(
     ]
 )
 
-# `device_sk` is BIGINT to match the surrogate-key allocation expression
-# `MAX(device_sk) + ROW_NUMBER()` in dim_devices_scd2.sql.
+# device_sk is BIGINT to match SCD2 key allocation.
 DIM_DEVICES_BOOTSTRAP_DDL: str = """
     device_sk BIGINT,
     device_id STRING,
@@ -93,8 +67,7 @@ DIM_DEVICES_SPARK_SCHEMA: StructType = StructType(
 @dataclass(frozen=True)
 class Transform:
     sql_file: str
-    # `zone` is one of "staging"/"curated"; combined with the matching job
-    # argument it yields the fully-qualified target table name.
+    # zone is 'staging' or 'curated'.
     zone: str
     table_name: str
 
@@ -116,8 +89,7 @@ def _read_sql_from_s3(s3_client, s3_uri: str) -> str:
 
 
 def _substitute_db_markers(sql_text: str, db_map: dict[str, str]) -> str:
-    # `.replace` (not `.format`) so any literal `{` / `}` that ever shows up in
-    # SQL (struct literals, JSON, etc.) is left alone.
+    # Use replace to avoid altering literal { } in SQL.
     return (
         sql_text.replace("{raw_db}", db_map["raw"])
         .replace("{staging_db}", db_map["staging"])
@@ -139,8 +111,7 @@ def _table_exists(spark: SparkSession, table: str) -> bool:
 
 
 def _get_table_location(spark: SparkSession, table: str) -> str | None:
-    """Return the LOCATION URI of a catalog table, or None if the table
-    doesn't exist or doesn't expose a Location row in DESCRIBE EXTENDED."""
+    """Return the table LOCATION URI, or None if not available."""
     try:
         rows = spark.sql(f"DESCRIBE EXTENDED {table}").collect()
     except Exception:  # noqa: BLE001 - missing table is the documented signal
@@ -152,15 +123,7 @@ def _get_table_location(spark: SparkSession, table: str) -> str | None:
 
 
 def _bootstrap_dim_devices(spark: SparkSession, curated_db: str, primary_path: str) -> None:
-    """First-run-only bootstrap of `<curated_db>.dim_devices`.
-
-    Creates the external table at `primary_path` and seeds it with a single
-    empty Parquet file so the first SCD2 read has an actual file to scan
-    (Spark sometimes warns or trips on external tables whose LOCATION
-    contains no files at all). The function is guarded by `_table_exists`
-    so subsequent runs don't wipe the live data — that would be a critical
-    bug if the empty write happened every run.
-    """
+    """Create empty dim_devices table if missing."""
     table = f"{curated_db}.dim_devices"
     if _table_exists(spark, table):
         return
@@ -181,9 +144,7 @@ def _materialize_to_table(
 ) -> int:
     df: DataFrame = spark.sql(sql_text)
     df.write.mode("overwrite").parquet(s3_path)
-    spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {target_table} USING PARQUET LOCATION '{s3_path}'"
-    )
+    spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table} USING PARQUET LOCATION '{s3_path}'")
     spark.catalog.refreshTable(target_table)
     return spark.sql(f"SELECT COUNT(*) AS n FROM {target_table}").collect()[0]["n"]
 
@@ -194,28 +155,13 @@ def _materialize_dim_devices(
     curated_db: str,
     curated_loc: str,
 ) -> int:
-    """SCD2-specific materialize that swaps the catalog LOCATION instead of
-    overwriting in place.
-
-    The merge query reads from `<curated_db>.dim_devices`; writing the
-    result to that same path would race the reader. Instead we keep two
-    sibling paths (`dim_devices/` and `dim_devices_next/`), write to
-    whichever the table is **not** currently pointing at, and re-create
-    the catalog table at the new LOCATION. Consecutive runs alternate
-    between the two paths so the previous generation's files remain on S3
-    until the run after next overwrites them — useful for ad-hoc audit.
-    """
+    """Write dim_devices using alternating paths to avoid read-write race."""
     table = f"{curated_db}.dim_devices"
     primary = f"{curated_loc.rstrip('/')}/dim_devices/"
     secondary = f"{curated_loc.rstrip('/')}/dim_devices_next/"
     current = _get_table_location(spark, table)
-    # If the table doesn't exist yet (shouldn't happen — bootstrap precedes
-    # the transforms loop) or points anywhere unexpected, default to
-    # writing the primary path.
     next_path = (
-        secondary
-        if current is not None and current.rstrip("/") == primary.rstrip("/")
-        else primary
+        secondary if current is not None and current.rstrip("/") == primary.rstrip("/") else primary
     )
 
     df: DataFrame = spark.sql(sql_text)
@@ -223,8 +169,7 @@ def _materialize_dim_devices(
 
     spark.sql(f"DROP TABLE IF EXISTS {table}")
     spark.sql(
-        f"CREATE TABLE {table} ({DIM_DEVICES_BOOTSTRAP_DDL}) "
-        f"USING PARQUET LOCATION '{next_path}'"
+        f"CREATE TABLE {table} ({DIM_DEVICES_BOOTSTRAP_DDL}) USING PARQUET LOCATION '{next_path}'"
     )
     spark.catalog.refreshTable(table)
     return spark.sql(f"SELECT COUNT(*) AS n FROM {table}").collect()[0]["n"]
@@ -242,9 +187,7 @@ def _run_transforms(
     for transform in TRANSFORMS:
         target_table = f"{db_map[transform.zone]}.{transform.table_name}"
         sql_text = _substitute_db_markers(
-            _read_sql_from_s3(
-                s3_client, f"{sql_base_uri.rstrip('/')}/{transform.sql_file}"
-            ),
+            _read_sql_from_s3(s3_client, f"{sql_base_uri.rstrip('/')}/{transform.sql_file}"),
             db_map,
         )
         if transform.sql_file == "dim_devices_scd2.sql":
@@ -258,12 +201,8 @@ def _run_transforms(
     return counts
 
 
-def _ensure_pipeline_runs_table(
-    spark: SparkSession, curated_db: str, curated_location: str
-) -> str:
+def _ensure_pipeline_runs_table(spark: SparkSession, curated_db: str, curated_location: str) -> str:
     table = f"{curated_db}.{PIPELINE_RUNS_TABLE_NAME}"
-    # Column order here must match PIPELINE_RUNS_SCHEMA — `insertInto` is
-    # positional.
     spark.sql(
         f"""
         CREATE TABLE IF NOT EXISTS {table} (
@@ -277,15 +216,14 @@ def _ensure_pipeline_runs_table(
             failure_reason STRING
         )
         USING PARQUET
-        LOCATION '{curated_location.rstrip('/')}/pipeline_runs/'
+        LOCATION '{curated_location.rstrip("/")}/pipeline_runs/'
         """
     )
     return table
 
 
 def _to_naive_utc(dt: datetime) -> datetime:
-    """Spark TIMESTAMP serialization is most predictable from a tz-naïve UTC
-    datetime; tz-aware values can be coerced to TimestampNTZ unexpectedly."""
+    """Convert datetime to naive UTC for Spark TIMESTAMP."""
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
@@ -346,12 +284,8 @@ def main() -> None:
     pipeline_runs_table = _ensure_pipeline_runs_table(
         spark, db_map["curated"], args["curated_location"]
     )
-    # Bootstrap dim_devices once at job start (idempotent); inside the
-    # transforms loop it'd risk wiping live data on the second-and-later
-    # runs because the empty-Parquet seed write is mode("overwrite").
-    primary_dim_devices_path = (
-        f"{args['curated_location'].rstrip('/')}/dim_devices/"
-    )
+    # Bootstrap dim_devices once at job start.
+    primary_dim_devices_path = f"{args['curated_location'].rstrip('/')}/dim_devices/"
     _bootstrap_dim_devices(spark, db_map["curated"], primary_dim_devices_path)
 
     raw_records_read = 0
@@ -360,9 +294,9 @@ def main() -> None:
     failure_reason: str | None = None
 
     try:
-        raw_records_read = spark.sql(
-            f"SELECT COUNT(*) AS n FROM {db_map['raw']}.events"
-        ).collect()[0]["n"]
+        raw_records_read = spark.sql(f"SELECT COUNT(*) AS n FROM {db_map['raw']}.events").collect()[
+            0
+        ]["n"]
 
         counts = _run_transforms(
             spark,
@@ -373,7 +307,7 @@ def main() -> None:
             db_map,
         )
         clean_records_written = counts.get(f"{db_map['staging']}.events_clean", 0)
-    except Exception as exc:  # noqa: BLE001 - convert any failure into an audit row
+    except Exception as exc:  # noqa: BLE001 - write any failure to the audit row
         status = "failed"
         failure_reason = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
         _write_pipeline_run(

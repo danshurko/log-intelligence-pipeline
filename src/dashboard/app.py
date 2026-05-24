@@ -1,12 +1,8 @@
 """Streamlit dashboard for the log-intelligence pipeline.
 
-Run with `make dashboard`, which exports the AWS-side env vars from
-`terraform output` before invoking `streamlit run` on this module.
-
-Four tabs render the metrics in `sql/metrics/` via Athena; the sidebar
-surfaces pipeline health (last Glue job run, DLQ depth, last successful
-Step Functions execution). Auto-refresh is opt-in to keep the page
-responsive when the user is interacting with it.
+Run with `make dashboard` to start.
+The sidebar shows pipeline health and metrics from the last run.
+Auto-refresh can be enabled to update every 30 seconds.
 """
 
 from __future__ import annotations
@@ -14,15 +10,13 @@ from __future__ import annotations
 import time
 
 import plotly.express as px
-import streamlit as st
-
 import queries
+import streamlit as st
+from queries import _safe_int
 
 st.set_page_config(page_title="Log intelligence", layout="wide")
 st.title("Log intelligence")
 
-
-# --- sidebar: pipeline health & refresh controls ---------------------------
 
 with st.sidebar:
     st.header("Pipeline health")
@@ -33,8 +27,8 @@ with st.sidebar:
     else:
         st.metric("Last run status", str(latest.get("status") or "—"))
         st.write("Started:", latest.get("started_at"))
-        st.write("Clean records:", latest.get("clean_records_written"))
-        st.write("Rejected records:", latest.get("rejected_records"))
+        st.write("Clean records:", _safe_int(latest.get("clean_records_written")))
+        st.write("Rejected records:", _safe_int(latest.get("rejected_records")))
         if latest.get("failure_reason"):
             st.error(latest["failure_reason"])
 
@@ -52,8 +46,6 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-
-# --- main tabs --------------------------------------------------------------
 
 overview_tab, errors_tab, devices_tab, anomalies_tab = st.tabs(
     ["Overview", "Top Errors", "Devices", "Anomalies"]
@@ -107,8 +99,6 @@ with devices_tab:
     if rates.empty and mtbe.empty:
         st.info("No device data in the last 24 hours.")
     else:
-        # Outer-merge so devices with no recent errors still appear, with
-        # the MTBE column blank.
         joined = rates.merge(mtbe, on="device_id", how="outer")
         st.dataframe(joined, use_container_width=True)
 
@@ -136,7 +126,5 @@ with anomalies_tab:
 
 
 if auto_refresh:
-    # Sleep at the bottom so the page renders fully before the rerun fires.
-    # The user can still toggle auto-refresh off above to regain interactivity.
     time.sleep(30)
     st.rerun()

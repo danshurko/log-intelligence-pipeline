@@ -1,11 +1,6 @@
-"""One-shot script that rebuilds `tests/fixtures/sample_events.parquet`.
+"""Rebuild the sample_events.parquet test fixture.
 
 Run: `uv run python -m tests.fixtures._generate_sample_events`
-
-The fixture is deterministic (every random source is seeded) and is meant
-to be committed alongside the tests; the test suite does not call this
-script. It only needs to be re-run when the underlying event schema or
-the dirtiness defaults change.
 """
 
 from __future__ import annotations
@@ -27,13 +22,11 @@ from src.generator.scenarios import normal
 
 FIXTURE_PATH = Path(__file__).parent / "sample_events.parquet"
 
-# A timestamp that will always be more than 1 hour ahead of `current_timestamp`,
-# guaranteeing the future-drop branch in stg_events_clean.sql has work to do.
+# A timestamp that is always more than 1 hour in the future.
 FAR_FUTURE = "9999-12-31T23:59:00Z"
 FAR_FUTURE_COUNT = 5
 
-# 15 devices over 60 seconds at the fleet's natural rate (~0.57 eps mean)
-# lands near 500 records, which the plan calls for.
+# 15 devices over 60 seconds gives about 500 records.
 SEED = 4242
 N_DEVICES = 15
 WINDOW_SECONDS = 60
@@ -54,11 +47,7 @@ def build_records() -> list[dict]:
     end = start + timedelta(seconds=WINDOW_SECONDS)
 
     base = normal(fleet, start, end, rng)
-    # Inject only duplicates + optional-field drops here. The relative
-    # past/future drifts from dirtiness would land in the recent past from
-    # the test's point of view (not >1h future), so they're not useful for
-    # exercising the future-timestamp drop. Far-future rows are appended
-    # explicitly below.
+    # Add only duplicates and missing fields here.
     cfg = DirtinessConfig(
         missing_fields_rate=0.02,
         duplicate_rate=0.05,
@@ -69,8 +58,7 @@ def build_records() -> list[dict]:
     dirty = inject_dirtiness(base, cfg, seed=SEED)
     clean = _strip_markers(dirty)
 
-    # Templates lifted from the first event in the fleet so the synthetic
-    # far-future rows match the schema exactly.
+    # Use the first event as a template for the future rows.
     template = clean[0]
     for i in range(FAR_FUTURE_COUNT):
         clean.append(

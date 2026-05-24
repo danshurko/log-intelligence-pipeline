@@ -79,10 +79,17 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--days", type=int, default=7, show_default=True,
-              help="Number of days of history to generate.")
-@click.option("--devices", "n_devices", type=int, default=50, show_default=True,
-              help="Number of devices in the simulated fleet.")
+@click.option(
+    "--days", type=int, default=7, show_default=True, help="Number of days of history to generate."
+)
+@click.option(
+    "--devices",
+    "n_devices",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Number of devices in the simulated fleet.",
+)
 @click.option(
     "--scenario",
     type=click.Choice(list(SCENARIOS), case_sensitive=False),
@@ -90,10 +97,19 @@ def cli() -> None:
     show_default=True,
 )
 @click.option("--bucket", required=True, help="S3 bucket name for the raw zone.")
-@click.option("--dirty/--no-dirty", default=True, show_default=True,
-              help="Inject probabilistic data quality issues.")
-@click.option("--seed", type=int, default=42, show_default=True,
-              help="Seed for the fleet and per-hour generators.")
+@click.option(
+    "--dirty/--no-dirty",
+    default=True,
+    show_default=True,
+    help="Inject probabilistic data quality issues.",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=42,
+    show_default=True,
+    help="Seed for the fleet and per-hour generators.",
+)
 def backfill(
     days: int,
     n_devices: int,
@@ -131,9 +147,7 @@ def backfill(
                 f"batch-{uuid.uuid4()}.parquet"
             )
             s3.put_object(Bucket=bucket, Key=key, Body=buf.getvalue())
-            click.echo(
-                f"{hour_cursor.isoformat()}  events={len(records):>6}  s3://{bucket}/{key}"
-            )
+            click.echo(f"{hour_cursor.isoformat()}  events={len(records):>6}  s3://{bucket}/{key}")
         else:
             click.echo(f"{hour_cursor.isoformat()}  events=     0  (no data)")
 
@@ -146,10 +160,10 @@ STREAM_TICK_SECONDS: float = 1.0
 
 
 def _record_to_kinesis_entry(record: dict) -> dict:
-    """Serialize one generator record for `kinesis.put_records`.
+    """Serialize one record for kinesis.put_records.
 
-    Malformed records ride through as their raw (intentionally broken) JSON
-    payload so the Lambda's `RecordsRejected` metric has something to count.
+    If a record is marked malformed, pass its raw payload so downstream
+    can count rejected records.
     """
     if record.get(MALFORMED_MARKER):
         payload = record.get(MALFORMED_RAW_PAYLOAD, MALFORMED_BYTES)
@@ -179,11 +193,9 @@ def _generate_tick(
     tick_start: datetime,
     rng: random.Random,
 ) -> list[dict]:
-    """Generate ~`rate` events spread evenly across a 1-second tick.
+    """Generate approximately `rate` events over a 1-second tick.
 
-    Devices are picked uniformly at random so the per-tick output rate is
-    decoupled from fleet size and per-device-type natural rates. This keeps
-    `--rate` a true throttle for the streaming demo.
+    Devices are chosen at random; output is spread evenly within the tick.
     """
     n = max(0, int(round(rate * STREAM_TICK_SECONDS)))
     if not fleet or n == 0:
@@ -198,21 +210,37 @@ def _generate_tick(
 
 
 @cli.command()
-@click.option("--rate", type=float, default=10.0, show_default=True,
-              help="Target events per second.")
-@click.option("--duration", type=int, default=-1, show_default=True,
-              help="Seconds to run; -1 streams until interrupted.")
+@click.option(
+    "--rate", type=float, default=10.0, show_default=True, help="Target events per second."
+)
+@click.option(
+    "--duration",
+    type=int,
+    default=-1,
+    show_default=True,
+    help="Seconds to run; -1 streams until interrupted.",
+)
 @click.option(
     "--scenario",
     type=click.Choice(list(SCENARIOS), case_sensitive=False),
     default="normal",
     show_default=True,
 )
-@click.option("--devices", "n_devices", type=int, default=50, show_default=True,
-              help="Number of devices in the simulated fleet.")
+@click.option(
+    "--devices",
+    "n_devices",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Number of devices in the simulated fleet.",
+)
 @click.option("--stream-name", required=True, help="Kinesis data stream name.")
-@click.option("--dirty/--no-dirty", default=True, show_default=True,
-              help="Inject probabilistic data quality issues.")
+@click.option(
+    "--dirty/--no-dirty",
+    default=True,
+    show_default=True,
+    help="Inject probabilistic data quality issues.",
+)
 @click.option("--seed", type=int, default=42, show_default=True)
 def stream(
     rate: float,
@@ -223,10 +251,7 @@ def stream(
     dirty: bool,
     seed: int,
 ) -> None:
-    """Stream events live into a Kinesis data stream at the target rate."""
-    # `scenario` is accepted for parity with `backfill` but stream mode uses
-    # the baseline error rate; richer scenario shaping over a live stream
-    # would need stateful burst timers and is out of scope here.
+    """Stream events to Kinesis data stream."""
     del scenario
     fleet = generate_fleet(n_devices, seed=seed)
     rng = random.Random(seed)
@@ -246,9 +271,7 @@ def stream(
         if records:
             sent = _put_records(kinesis, stream_name, records)
             total_sent += sent
-            click.echo(
-                f"{tick_start.isoformat()}  sent={sent:>4}  total={total_sent}"
-            )
+            click.echo(f"{tick_start.isoformat()}  sent={sent:>4}  total={total_sent}")
         tick_index += 1
         sleep_for = started + tick_index * STREAM_TICK_SECONDS - time.monotonic()
         if sleep_for > 0:

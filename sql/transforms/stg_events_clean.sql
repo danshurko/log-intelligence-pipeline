@@ -1,6 +1,5 @@
--- Layer 2 cleanup: dedupe by event_id, drop rows missing required columns,
--- drop wildly-future timestamps (>1h ahead of current_timestamp). Result is
--- a pure SELECT; the orchestrator owns where the rows land.
+-- Clean events: remove duplicates by event_id, drop rows missing required
+-- fields, and exclude timestamps more than 1 hour in the future. Pure SELECT.
 WITH ranked AS (
   SELECT
     event_id,

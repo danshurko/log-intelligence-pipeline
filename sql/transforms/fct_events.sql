@@ -1,5 +1,4 @@
--- Fact table for all events. Joins the cleaned staging snapshot to the
--- current view of `dim_devices` to resolve the surrogate key.
+-- Events fact table with device key lookup
 SELECT
   e.event_id,
   d.device_sk,

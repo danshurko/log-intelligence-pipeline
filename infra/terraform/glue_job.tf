@@ -1,6 +1,4 @@
-# SQL transforms are deployed to the artifacts bucket and downloaded by
-# the PySpark job at runtime. `source_hash = filemd5(...)` keeps the S3
-# object in sync whenever the local file changes.
+# Upload SQL transforms to artifacts; filemd5 updates objects when files change.
 resource "aws_s3_object" "transform_sql" {
   for_each = fileset("${path.module}/../../sql/transforms", "*.sql")
 
@@ -97,9 +95,7 @@ resource "aws_glue_job" "transform" {
   default_arguments = {
     "--enable-metrics"                   = ""
     "--enable-continuous-cloudwatch-log" = "true"
-    # Glue 4.0 jobs default to a job-local Hive metastore, so SparkSession
-    # would only see `default`. This flag swaps the metastore for the Glue
-    # Data Catalog, which is where the Crawler registered `device_log.events`.
+    # Use Glue Data Catalog instead of local metastore.
     "--enable-glue-datacatalog" = "true"
     "--sql_base_uri"            = "s3://${aws_s3_bucket.data["artifacts"].id}/sql/transforms"
     "--raw_database"            = aws_glue_catalog_database.zones["raw"].name

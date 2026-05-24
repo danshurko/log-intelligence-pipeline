@@ -1,6 +1,3 @@
--- One row per firmware version observed, with the earliest event timestamp
--- that surfaced it. `first_observed` lets analytics correlate firmware
--- rollouts with downstream error trends.
 WITH first_seen AS (
   SELECT
     firmware_version,

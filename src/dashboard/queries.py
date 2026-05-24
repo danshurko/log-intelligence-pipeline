@@ -1,20 +1,4 @@
-"""Athena query layer for the Streamlit dashboard.
-
-Each public function returns a pandas DataFrame (or simple scalar/dict) so
-the dashboard tabs can render results directly. Results are cached with
-`st.cache_data(ttl=30)` so a single render reuses queries and the 30-second
-auto-refresh interval drives invalidation.
-
-Configuration is read from environment variables (set by `make dashboard`
-from `terraform output`):
-
-  ATHENA_OUTPUT_S3       — s3://… prefix for Athena's scratch results
-  ATHENA_WORKGROUP       — defaults to "primary"
-  AWS_REGION             — defaults to "us-east-1"
-  CURATED_DATABASE       — Glue Catalog database holding fct_events etc.
-  DLQ_NAME               — optional, enables the DLQ-depth sidebar tile
-  STATE_MACHINE_ARN      — optional, enables the last-run sidebar tile
-"""
+"""Athena query layer for dashboard. Results cached for 30s."""
 
 from __future__ import annotations
 
@@ -41,6 +25,23 @@ def _curated_db() -> str:
 
 def _read_metric_sql(filename: str) -> str:
     return (SQL_METRICS / filename).read_text().replace("{curated_db}", _curated_db())
+
+
+def _safe_int(val, default: int = 0) -> int:
+    if val is None or (isinstance(val, float) and pd.isna(val)) or pd.isna(val):
+        return default
+    return int(val)
+
+
+def _na_to_none(val):
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return val
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -97,11 +98,11 @@ def overview_totals() -> dict:
         WHERE event_ts >= current_timestamp - INTERVAL '1' DAY
         """
     )
-    total = int(df["total_events"].iloc[0] or 0)
-    errors = int(df["error_count"].iloc[0] or 0)
+    total = _safe_int(df["total_events"].iloc[0])
+    errors = _safe_int(df["error_count"].iloc[0])
     return {
         "total_events": total,
-        "active_devices": int(df["active_devices"].iloc[0] or 0),
+        "active_devices": _safe_int(df["active_devices"].iloc[0]),
         "error_rate": (errors / total) if total else 0.0,
     }
 
@@ -162,7 +163,7 @@ def latest_pipeline_run() -> dict | None:
         return None
     if df.empty:
         return None
-    return df.iloc[0].to_dict()
+    return {k: _na_to_none(v) for k, v in df.iloc[0].to_dict().items()}
 
 
 @st.cache_data(ttl=30, show_spinner=False)

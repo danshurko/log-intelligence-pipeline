@@ -7,16 +7,12 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "sample_events.parquet"
 SQL_DIR = ROOT / "sql" / "transforms"
 
-# Match the database names provisioned in `infra/terraform/glue.tf` so the
-# `{raw_db}` / `{staging_db}` / `{curated_db}` placeholders in the SQL files
-# expand to the same identifiers used in production.
+# Keep names aligned with production config.
 RAW_DB = "device_log_raw"
 STAGING_DB = "device_log_staging"
 CURATED_DB = "device_log_curated"
 
-# Each transform SQL file is a pure SELECT; the test wrapper materializes
-# its result into the named DuckDB table, mirroring what the PySpark job
-# does in production (compute -> write -> register).
+# SQL file -> output table.
 TRANSFORM_TARGETS = {
     "stg_events_clean.sql": f"{STAGING_DB}.events_clean",
     "dim_facilities.sql": f"{CURATED_DB}.dim_facilities",
@@ -26,10 +22,7 @@ TRANSFORM_TARGETS = {
     "fct_errors.sql": f"{CURATED_DB}.fct_errors",
 }
 
-# Pre-creating an empty dim_devices before the first SCD2 run gives the merge
-# query a table to read from and pins the column types so the UNION ALL
-# inside the SQL doesn't mix TIMESTAMPTZ (DuckDB's default for
-# `current_timestamp`) with plain TIMESTAMP.
+# Bootstrap empty dim_devices for the first SCD2 run.
 DIM_DEVICES_BOOTSTRAP = f"""
 CREATE TABLE {CURATED_DB}.dim_devices (
   device_sk BIGINT,
@@ -47,18 +40,15 @@ def _new_db() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
     for schema in (RAW_DB, STAGING_DB, CURATED_DB):
         con.execute(f"CREATE SCHEMA {schema}")
-    con.execute(
-        f"CREATE TABLE {RAW_DB}.events AS SELECT * FROM read_parquet('{FIXTURE}')"
-    )
+    con.execute(f"CREATE TABLE {RAW_DB}.events AS SELECT * FROM read_parquet('{FIXTURE}')")
     return con
 
 
 def _materialize(con: duckdb.DuckDBPyConnection, filename: str) -> None:
-    # `.replace` (not `.format`) matches the production wrapper so any
-    # literal `{` / `}` ever introduced into a SQL file behaves identically
-    # in tests and in Glue.
+    # Use replace to match production behavior.
     sql = (
-        (SQL_DIR / filename).read_text()
+        (SQL_DIR / filename)
+        .read_text()
         .replace("{raw_db}", RAW_DB)
         .replace("{staging_db}", STAGING_DB)
         .replace("{curated_db}", CURATED_DB)
@@ -112,9 +102,12 @@ def test_dim_facilities_unique_keys_and_known_regions(con):
     ).fetchone()
     assert n_rows == n_keys and n_rows > 0
 
-    regions = {r[0] for r in con.execute(
-        "SELECT DISTINCT region FROM device_log_curated.dim_facilities"
-    ).fetchall()}
+    regions = {
+        r[0]
+        for r in con.execute(
+            "SELECT DISTINCT region FROM device_log_curated.dim_facilities"
+        ).fetchall()
+    }
     assert regions.issubset({"eu", "us", "ap"})
 
 
@@ -135,7 +128,7 @@ def test_dim_firmware_one_row_per_version(con):
 def test_dim_devices_scd2_initial_then_firmware_change(con):
     _materialize(con, "stg_events_clean.sql")
 
-    # First run: dim_devices is empty, so every device gets a brand-new row.
+    # First run: create one current row per device.
     con.execute(DIM_DEVICES_BOOTSTRAP)
     _materialize(con, "dim_devices_scd2.sql")
 
@@ -158,8 +151,7 @@ def test_dim_devices_scd2_initial_then_firmware_change(con):
     ).fetchone()[0]
     assert bad_valid_to == 0
 
-    # Second run: pick a device and flip its firmware in staging, expecting
-    # SCD2 to close the old current row and open a new one for that device.
+    # Second run: change firmware for one device.
     target_device = con.execute(
         "SELECT device_id FROM device_log_staging.events_clean GROUP BY device_id "
         "ORDER BY COUNT(*) DESC LIMIT 1"
@@ -193,9 +185,9 @@ def test_fct_events_resolves_every_device_sk(con):
     _materialize(con, "dim_devices_scd2.sql")
     _materialize(con, "fct_events.sql")
 
-    staging_count = con.execute(
-        "SELECT COUNT(*) FROM device_log_staging.events_clean"
-    ).fetchone()[0]
+    staging_count = con.execute("SELECT COUNT(*) FROM device_log_staging.events_clean").fetchone()[
+        0
+    ]
     fct_count = con.execute("SELECT COUNT(*) FROM device_log_curated.fct_events").fetchone()[0]
     assert fct_count == staging_count
 
@@ -224,9 +216,9 @@ def test_fct_errors_is_subset_of_errors_in_staging(con):
     staging_errors = con.execute(
         "SELECT COUNT(*) FROM device_log_staging.events_clean WHERE event_type = 'error'"
     ).fetchone()[0]
-    fct_errors_count = con.execute(
-        "SELECT COUNT(*) FROM device_log_curated.fct_errors"
-    ).fetchone()[0]
+    fct_errors_count = con.execute("SELECT COUNT(*) FROM device_log_curated.fct_errors").fetchone()[
+        0
+    ]
     assert fct_errors_count == staging_errors
 
     null_codes = con.execute(

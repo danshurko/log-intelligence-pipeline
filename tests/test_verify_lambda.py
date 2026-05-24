@@ -4,11 +4,7 @@ from src.orchestration.verify_lambda import VerifyFailedError, verify
 
 
 class FakeAthena:
-    """In-memory Athena double that hands out one count per query.
-
-    Pop order matches the order of queries the lambda issues: staging first,
-    curated second.
-    """
+    """Simple Athena mock for tests."""
 
     def __init__(self, counts: list[int]) -> None:
         self._counts = list(counts)
@@ -62,9 +58,7 @@ def test_verify_raises_when_athena_query_fails():
     class FailingAthena(FakeAthena):
         def get_query_execution(self, *, QueryExecutionId: str):  # noqa: N803
             return {
-                "QueryExecution": {
-                    "Status": {"State": "FAILED", "StateChangeReason": "syntax err"}
-                }
+                "QueryExecution": {"Status": {"State": "FAILED", "StateChangeReason": "syntax err"}}
             }
 
     with pytest.raises(RuntimeError, match="athena query FAILED"):

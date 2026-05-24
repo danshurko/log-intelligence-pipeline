@@ -28,11 +28,9 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger.setLevel(level)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonLineFormatter())
-    # AWS Lambda attaches its own root handler; replace it on this logger so
-    # our JSON formatter wins and records don't get printed twice.
     logger.handlers = [handler]
     logger.propagate = False
-    logger._json_configured = True  # type: ignore[attr-defined]
+    logger._json_configured = True
     return logger
 
 
