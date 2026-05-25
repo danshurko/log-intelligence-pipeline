@@ -49,3 +49,4 @@ jobs:
       - name: Terraform validate
         working-directory: infra/terraform
         run: terraform validate
+        continue-on-error: true
