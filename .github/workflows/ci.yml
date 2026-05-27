@@ -46,7 +46,14 @@ jobs:
         working-directory: infra/terraform
         run: terraform init -backend=false
 
+      - name: Create dummy lambda layer for validation
+        working-directory: infra/terraform
+        run: |
+          mkdir -p build
+          touch build/lambda_layer.zip
+          touch build/lambda.zip
+          touch build/verify_lambda.zip
+
       - name: Terraform validate
         working-directory: infra/terraform
         run: terraform validate
-        continue-on-error: true
